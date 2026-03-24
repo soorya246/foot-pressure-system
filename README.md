@@ -10,9 +10,9 @@ bme261_code.ino --> code that gets updated. Last update: 03/24/26 @ around 1:00p
 
 ## Data Transmission Protocol & Payload Structure
 
-[cite_start]The ESP32 firmware is designed to continuously sample the 3x4 sensor matrix at a rate of 100 Hz[cite: 157, 166]. During every 10-millisecond cycle, the microcontroller reads all 12 physical nodes on the sandal, calculates the current battery percentage, and packages this into a single data payload.
+The ESP32 firmware is designed to continuously sample the 3x4 sensor matrix at a rate of 100 Hz[cite: 157, 166]. During every 10-millisecond cycle, the microcontroller reads all 12 physical nodes on the sandal, calculates the current battery percentage, and packages this into a single data payload.
 
-[cite_start]Before the payload is padded and secured via AES-128 encryption [cite: 142] for Bluetooth transmission, it is serialized into a simple, comma-separated string. 
+Before the payload is padded and secured via AES-128 encryption [cite: 142] for Bluetooth transmission, it is serialized into a simple, comma-separated string. 
 
 ### Example Raw Packet
 A raw, unencrypted data packet looks like this:
