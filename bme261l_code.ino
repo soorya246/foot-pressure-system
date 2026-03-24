@@ -6,6 +6,7 @@
 #include <BLEUtils.h>    
 #include <BLE2902.h>     
 #include "mbedtls/aes.h" 
+#include "esp_sleep.h"   // Required for the Deep Sleep "Power Off" function
 
 // --- BLE Identifiers (UUIDs) ---
 #define SERVICE_UUID        "4fafc201-1fb5-459e-8fcc-c5c9c331914b" 
@@ -18,12 +19,13 @@ const int NUM_ROWS = 4;
 // DIGITAL OUTPUTS (Columns/Power)
 int colPins[NUM_COLS] = {4, 5, 12}; 
 
-// ANALOG INPUTS (Rows/Reading) 
+// ANALOG INPUTS (Rows/Reading) - Must be ADC1 pins
 int rowPins[NUM_ROWS] = {32, 33, 34, 35}; 
 
 // Interface Pins
+const int BUTTON_PIN = 27;        // Must be an RTC-enabled pin (Pin 27 works)
 const int BLUETOOTH_LED_PIN = 2;  
-const int BATTERY_PIN = 36;       // Keep this as an ADC1 pin!
+const int BATTERY_PIN = 36;       
 
 // --- State & Timing Variables ---
 BLEServer* pServer = NULL;               
@@ -39,7 +41,8 @@ bool ledState = LOW;
 int sensorData[NUM_COLS][NUM_ROWS];
 
 // AES-128 Encryption Key
-unsigned char aes_key[16] = "FootSandalKey12"; 
+unsigned char aes_key[16] = "DrDanLabDevice"; 
+
 
 // ==========================================
 // 2. BLE CONNECTION CALLBACKS
@@ -50,9 +53,11 @@ class MyServerCallbacks: public BLEServerCallbacks {
     };
     void onDisconnect(BLEServer* pServer) {
       deviceConnected = false; 
+      // Restart broadcasting the signal automatically if the connection drops
       BLEDevice::startAdvertising(); 
     }
 };
+
 
 // ==========================================
 // 3. SETUP FUNCTION 
@@ -62,6 +67,15 @@ void setup() {
   
   pinMode(BLUETOOTH_LED_PIN, OUTPUT); 
   pinMode(BATTERY_PIN, INPUT);        
+
+  // Configure the power button using the internal resistor
+  pinMode(BUTTON_PIN, INPUT_PULLUP);
+
+  // CRITICAL: If the user just pressed the button to wake the board up, 
+  // we must wait for them to let go before continuing, otherwise it will instantly turn off again.
+  while (digitalRead(BUTTON_PIN) == LOW) {
+    delay(10); 
+  }
 
   for (int i = 0; i < NUM_COLS; i++) {
     pinMode(colPins[i], OUTPUT);
@@ -93,8 +107,9 @@ void setup() {
   pAdvertising->setMinPreferred(0x0);  
   BLEDevice::startAdvertising();
 
-  Serial.println("System Initialized. Waiting for Windows app...");
+  Serial.println("System Powered On. Waiting for Windows app...");
 }
+
 
 // ==========================================
 // 4. MAIN LOOP FUNCTION
@@ -103,7 +118,30 @@ void loop() {
   unsigned long currentMillis = millis();
 
   // --------------------------------------------------
-  // Feature A: Bluetooth LED Indicator
+  // Feature A: Power Off Logic (Hold to turn off)
+  // --------------------------------------------------
+  // If the button is pressed down (LOW)
+  if (digitalRead(BUTTON_PIN) == LOW) {
+      // Wait 1 second to ensure it's an intentional power-off hold, not a bump
+      delay(1000); 
+      
+      // If it is still being held down after 1 second...
+      if (digitalRead(BUTTON_PIN) == LOW) {
+          Serial.println("Powering Down...");
+          
+          // Turn off the LED to show the user it is shutting down
+          digitalWrite(BLUETOOTH_LED_PIN, LOW);
+          
+          // Tell the ESP32 to wake back up if Pin 27 is pulled LOW again
+          esp_sleep_enable_ext0_wakeup(GPIO_NUM_27, 0); 
+          
+          // Go to Deep Sleep (Turns the device functionally "OFF")
+          esp_deep_sleep_start(); 
+      }
+  }
+
+  // --------------------------------------------------
+  // Feature B: Bluetooth LED Indicator
   // --------------------------------------------------
   if (deviceConnected) {
     if (currentMillis - previousBlinkMillis >= 500) { 
@@ -116,10 +154,10 @@ void loop() {
   }
 
   // --------------------------------------------------
-  // Feature B: Data Acquisition & Transmission
+  // Feature C: Continuous Data Acquisition & Transmission
   // --------------------------------------------------
   // The ESP32 will continuously stream data as long as it is connected.
-  // The Windows app will handle the logic of when to "start" or "pause" recording.
+  // The Windows app will dictate when to actually record or display this data.
   if (deviceConnected) {
       
       if (currentMillis - previousSampleMillis >= sampleInterval) {
